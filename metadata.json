@@ -1,0 +1,6 @@
+{
+  "name": "An Tâm Kỹ Thuật — Quản Lý Dịch Vụ Khách Hàng",
+  "description": "Hệ thống quản lý dịch vụ sửa chữa, điều phối thợ, khóa giá vật tư, theo dõi bảo hành và bảo dưỡng định kỳ.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
