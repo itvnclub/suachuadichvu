@@ -928,15 +928,15 @@ function sanitizeUser(user) {
   return rest;
 }
 function ensureStore() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-  if (!fs.existsSync(STORE_PATH)) {
-    const initial = createInitialStoreData();
-    fs.writeFileSync(STORE_PATH, JSON.stringify(initial, null, 2), "utf-8");
-    return initial;
-  }
   try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    if (!fs.existsSync(STORE_PATH)) {
+      const initial = createInitialStoreData();
+      fs.writeFileSync(STORE_PATH, JSON.stringify(initial, null, 2), "utf-8");
+      return initial;
+    }
     const raw = fs.readFileSync(STORE_PATH, "utf-8");
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed.users) || parsed.users.length === 0) {
@@ -945,20 +945,23 @@ function ensureStore() {
     }
     parsed.technicians = deriveActiveTechnicians(parsed.users);
     return parsed;
-  } catch {
-    const initial = createInitialStoreData();
-    fs.writeFileSync(STORE_PATH, JSON.stringify(initial, null, 2), "utf-8");
-    return initial;
+  } catch (err) {
+    console.warn("Could not read/init disk store, using memory fallback:", err);
+    return createInitialStoreData();
   }
 }
 function saveStore(data) {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
   data.technicians = deriveActiveTechnicians(data.users);
-  const tmpPath = `${STORE_PATH}.tmp`;
-  fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), "utf-8");
-  fs.renameSync(tmpPath, STORE_PATH);
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    const tmpPath = `${STORE_PATH}.tmp`;
+    fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), "utf-8");
+    fs.renameSync(tmpPath, STORE_PATH);
+  } catch (err) {
+    console.error("Failed to persist store to disk:", err);
+  }
 }
 function loadSessions() {
   try {
@@ -969,12 +972,16 @@ function loadSessions() {
   }
 }
 function saveSessions(sessions2) {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    const tmpPath = `${SESSIONS_PATH}.tmp`;
+    fs.writeFileSync(tmpPath, JSON.stringify(sessions2, null, 2), "utf-8");
+    fs.renameSync(tmpPath, SESSIONS_PATH);
+  } catch (err) {
+    console.error("Failed to persist sessions to disk:", err);
   }
-  const tmpPath = `${SESSIONS_PATH}.tmp`;
-  fs.writeFileSync(tmpPath, JSON.stringify(sessions2, null, 2), "utf-8");
-  fs.renameSync(tmpPath, SESSIONS_PATH);
 }
 var store = ensureStore();
 var sessions = loadSessions();
@@ -1488,7 +1495,8 @@ app.use("/api", (_req, res) => {
   res.status(404).json({ error: "API endpoint kh\xF4ng t\u1ED3n t\u1EA1i." });
 });
 async function startServer() {
-  const PORT = Number(process.env.PORT) || 3e3;
+  const rawPort = process.env.PORT;
+  const hasPassenger = typeof globalThis.PhusionPassenger !== "undefined" || Boolean(process.env.PASSENGER_APP_ENV) || Boolean(process.env.IN_PASSENGER);
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
@@ -1510,9 +1518,23 @@ async function startServer() {
       res.sendFile(indexHtmlPath);
     });
   }
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
-  });
+  if (hasPassenger) {
+    const target = rawPort ? /^\d+$/.test(rawPort) ? Number(rawPort) : rawPort : "passenger";
+    app.listen(target, () => {
+      console.log(`Server running under Passenger (${target})`);
+    });
+  } else {
+    const listenTarget = rawPort ? /^\d+$/.test(rawPort) ? Number(rawPort) : rawPort : 3e3;
+    if (typeof listenTarget === "number") {
+      app.listen(listenTarget, "0.0.0.0", () => {
+        console.log(`Server running on http://0.0.0.0:${listenTarget}`);
+      });
+    } else {
+      app.listen(listenTarget, () => {
+        console.log(`Server running on ${listenTarget}`);
+      });
+    }
+  }
 }
 startServer().catch((err) => {
   console.error("Failed to start server:", err);
