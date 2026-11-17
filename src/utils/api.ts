@@ -39,9 +39,28 @@ async function requestJson<T>(url: string, options?: RequestInit): Promise<T> {
     },
     ...options,
   });
-  const data = await res.json();
+
+  const rawText = await res.text();
+  let data: Record<string, unknown> | null = null;
+  try {
+    data = rawText ? (JSON.parse(rawText) as Record<string, unknown>) : {};
+  } catch {
+    if (rawText.trimStart().startsWith('<')) {
+      throw new Error(
+        'Máy chủ trả về trang HTML thay vì dữ liệu API. Hãy kiểm tra Backend Node.js đang chạy và tắt chế độ Static-only trên hosting.'
+      );
+    }
+    throw new Error(
+      `Phản hồi máy chủ không hợp lệ (HTTP ${res.status}). Vui lòng kiểm tra log Node.js trên hosting.`
+    );
+  }
+
   if (!res.ok) {
-    throw new Error(data.error || 'Có lỗi xảy ra khi kết nối máy chủ.');
+    const errMsg =
+      typeof data?.error === 'string'
+        ? data.error
+        : `Có lỗi xảy ra khi kết nối máy chủ (HTTP ${res.status}).`;
+    throw new Error(errMsg);
   }
   return data as T;
 }

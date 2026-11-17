@@ -27,8 +27,13 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const APP_ROOT = fs.existsSync(path.resolve(__dirname, 'package.json'))
+  ? __dirname
+  : fs.existsSync(path.resolve(__dirname, '..', 'package.json'))
+    ? path.resolve(__dirname, '..')
+    : process.cwd();
 
-const DATA_DIR = path.resolve(__dirname, 'data');
+const DATA_DIR = path.resolve(APP_ROOT, 'data');
 const STORE_PATH = path.join(DATA_DIR, 'store.json');
 const SESSIONS_PATH = path.join(DATA_DIR, 'sessions.json');
 
@@ -758,6 +763,11 @@ app.delete(
   }
 );
 
+// Never allow unmatched /api/* requests to fall through to SPA HTML
+app.use('/api', (_req, res) => {
+  res.status(404).json({ error: 'API endpoint không tồn tại.' });
+});
+
 async function startServer() {
   const PORT = Number(process.env.PORT) || 3000;
 
@@ -769,10 +779,20 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distDir = path.resolve(__dirname, 'dist');
+    const distDir = path.resolve(APP_ROOT, 'dist');
+    const indexHtmlPath = path.join(distDir, 'index.html');
     app.use(express.static(distDir));
     app.get('*', (_req, res) => {
-      res.sendFile(path.join(distDir, 'index.html'));
+      if (!fs.existsSync(indexHtmlPath)) {
+        res
+          .status(503)
+          .type('html')
+          .send(
+            '<!doctype html><html lang="vi"><meta charset="utf-8"><body style="font-family:sans-serif;padding:2rem"><h2>Chưa build giao diện (thiếu thư mục dist/)</h2><p>Vui lòng vào Plesk Node.js &rarr; <strong>Run script</strong> &rarr; chạy <code>build</code>, sau đó bấm <strong>Restart App</strong>.</p></body></html>'
+          );
+        return;
+      }
+      res.sendFile(indexHtmlPath);
     });
   }
 
@@ -781,4 +801,7 @@ async function startServer() {
   });
 }
 
-startServer();
+startServer().catch((err) => {
+  console.error('Failed to start server:', err);
+  process.exit(1);
+});
